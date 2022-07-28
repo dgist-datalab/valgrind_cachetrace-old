@@ -1,3 +1,16 @@
+(Note for this repository (valgrind_trace))
+Modified files: ./callgrind/sim.c, ./lackey/lk_main.c
+To use memory trace generation with cache filtering, run callgrind with simulate-wb option.
+(--tool=callgrind and --simulate-wb=yes is necessary)
+e.g., valgrind --tool=callgrind --simulate-wb=yes --simulate-hwpref=yes --log-fd=2 [cmd] 2> [output_result]
+
+To use memory trace generation without cache filtering, run lackey with trace-mem option.
+e.g., valgrind --tool=lackey --trace-mem=yes --log-fd=2 [cmd] 2> [output_result]
+
+--------------------------------------------------------------------------------
+
+
+
 
 Release notes for Valgrind
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

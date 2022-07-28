@@ -454,7 +454,7 @@ static Int   events_used = 0;
 
 static VG_REGPARM(2) void trace_instr(Addr addr, SizeT size)
 {
-   VG_(printf)("I  %08lx,%lu\n", addr, size);
+   //VG_(printf)("I  %08lx,%lu\n", addr, size);
 }
 
 static VG_REGPARM(2) void trace_load(Addr addr, SizeT size)
@@ -469,7 +469,9 @@ static VG_REGPARM(2) void trace_store(Addr addr, SizeT size)
 
 static VG_REGPARM(2) void trace_modify(Addr addr, SizeT size)
 {
-   VG_(printf)(" M %08lx,%lu\n", addr, size);
+   //VG_(printf)(" M %08lx,%lu\n", addr, size);
+   VG_(printf)(" L %08lx,%lu\n", addr, size);
+   VG_(printf)(" S %08lx,%lu\n", addr, size);
 }
 
 

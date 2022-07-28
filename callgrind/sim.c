@@ -182,7 +182,7 @@ static void cachesim_initcache(cache_t config, cache_t2* c)
    c->sets_min_1     = c->sets - 1;
    c->line_size_bits = VG_(log2)(c->line_size);
    c->tag_shift     = c->line_size_bits + VG_(log2)(c->sets);
-   c->tag_mask       = ~((1u<<c->tag_shift)-1);
+   c->tag_mask       = ~((1ul<<c->tag_shift)-1); 
 
    /* Can bits in tag entries be used for flags?
     * Should be always true as MIN_LINE_SIZE >= 16 */
@@ -223,6 +223,8 @@ static void print_cache(cache_t2* c)
 }
 #endif 
 
+/* ref function for LL */
+#define CACHELINE_DIRTY_UL 1ul
 
 /*------------------------------------------------------------*/
 /*--- Simple Cache Simulation                              ---*/
@@ -253,13 +255,14 @@ CacheResult cachesim_setref(cache_t2* c, UInt set_no, UWord tag)
     /* This loop is unrolled for just the first case, which is the most */
     /* common.  We can't unroll any further because it would screw up   */
     /* if we have a direct-mapped (1-way) cache.                        */
-    if (tag == set[0])
+    if (tag == (set[0]&~CACHELINE_DIRTY_UL)) {
         return Hit;
+	}
 
     /* If the tag is one other than the MRU, move it into the MRU spot  */
     /* and shuffle the rest down.                                       */
     for (i = 1; i < c->assoc; i++) {
-        if (tag == set[i]) {
+        if (tag == (set[i]&~CACHELINE_DIRTY_UL)) {
             for (j = i; j > 0; j--) {
                 set[j] = set[j - 1];
             }
@@ -277,6 +280,7 @@ CacheResult cachesim_setref(cache_t2* c, UInt set_no, UWord tag)
     return Miss;
 }
 
+#if 0
 __attribute__((always_inline))
 static __inline__
 CacheResult cachesim_ref(cache_t2* c, Addr a, UChar size)
@@ -305,6 +309,39 @@ CacheResult cachesim_ref(cache_t2* c, Addr a, UChar size)
    } else {
        VG_(printf)("addr: %lx  size: %u  blocks: %lu %lu",
 		   a, size, block1, block2);
+       VG_(tool_panic)("item straddles more than two cache sets");
+   }
+   return Hit;
+}
+#endif
+__attribute__((always_inline))
+static __inline__
+CacheResult cachesim_ref(cache_t2* c, Addr a, UChar size)
+{
+	/* cachesim_ref_wb version without RefType */
+    UInt set1 = ( a         >> c->line_size_bits) & (c->sets_min_1);
+    UInt set2 = ((a+size-1) >> c->line_size_bits) & (c->sets_min_1);
+    UWord tag = a & c->tag_mask;
+
+    /* Access entirely within line. */
+    if (set1 == set2) {
+		return cachesim_setref(c, set1, tag);
+	}
+
+    /* Access straddles two lines. */
+    /* Nb: this is a fast way of doing ((set1+1) % c->sets) */
+    else if (((set1 + 1) & (c->sets_min_1)) == set2) {
+	UWord tag2  = (a+size-1) & c->tag_mask;
+
+	/* the call updates cache structures as side effect */
+	CacheResult res1 =  cachesim_setref(c, set1, tag);
+	CacheResult res2 =  cachesim_setref(c, set2, tag2);
+
+	if ((res1 == MissDirty) || (res2 == MissDirty)) return MissDirty;
+	return ((res1 == Miss) || (res2 == Miss)) ? Miss : Hit;
+
+   } else {
+       VG_(printf)("addr: %lx  size: %u  sets: %u %u", a, size, set1, set2);
        VG_(tool_panic)("item straddles more than two cache sets");
    }
    return Hit;
@@ -349,8 +386,10 @@ CacheModelResult cachesim_D1_ref(Addr a, UChar size)
  */
 __attribute__((always_inline))
 static __inline__
-CacheResult cachesim_setref_wb(cache_t2* c, RefType ref, UInt set_no, UWord tag)
+CacheResult cachesim_setref_wb(cache_t2* c, RefType ref, UInt set_no, UWord tag, Addr a)
 {
+	Addr rest_a;
+
     int i, j;
     UWord *set, tmp_tag;
 
@@ -359,29 +398,48 @@ CacheResult cachesim_setref_wb(cache_t2* c, RefType ref, UInt set_no, UWord tag)
     /* This loop is unrolled for just the first case, which is the most */
     /* common.  We can't unroll any further because it would screw up   */
     /* if we have a direct-mapped (1-way) cache.                        */
-    if (tag == (set[0] & ~CACHELINE_DIRTY)) {
-	set[0] |= ref;
+
+    if (tag == (set[0] & ~CACHELINE_DIRTY_UL)) {
+		set[0] |= ref;
         return Hit;
     }
     /* If the tag is one other than the MRU, move it into the MRU spot  */
     /* and shuffle the rest down.                                       */
-    for (i = 1; i < c->assoc; i++) {
-	if (tag == (set[i] & ~CACHELINE_DIRTY)) {
-	    tmp_tag = set[i] | ref; // update dirty flag
-            for (j = i; j > 0; j--) {
-                set[j] = set[j - 1];
-            }
-            set[0] = tmp_tag;
-            return Hit;
-        }
-    }
+	for (i = 1; i < c->assoc; i++) {
+		if (tag == (set[i] & ~CACHELINE_DIRTY_UL)) {
+			tmp_tag = set[i] | ref; // update dirty flag
+
+			for (j = i; j > 0; j--) {
+				set[j] = set[j - 1];
+			}
+			set[0] = tmp_tag;
+
+			return Hit;
+		}
+	}
 
     /* A miss;  install this tag as MRU, shuffle rest down. */
-    tmp_tag = set[c->assoc - 1];
+    tmp_tag = set[c->assoc - 1]; // victim (if dirty -> MemWrite)
+
     for (j = c->assoc - 1; j > 0; j--) {
         set[j] = set[j - 1];
     }
     set[0] = tag | ref;
+
+
+	// If load miss -> MemRead
+	
+	/* Added code */
+	if (tmp_tag & CACHELINE_DIRTY_UL) { // If victim is dirty, write-back
+		/* If empty, then clean anyway */
+		rest_a = (tmp_tag&~CACHELINE_DIRTY_UL) | (set_no << c->line_size_bits);
+		VG_(printf)("[W %lx]\n", rest_a);
+
+	}
+
+	/* LL miss (load/store both) needs MemRead */
+	rest_a = tag | (set_no << c->line_size_bits);
+	VG_(printf)("[R %lx]\n", rest_a);
 
     return (tmp_tag & CACHELINE_DIRTY) ? MissDirty : Miss;
 }
@@ -395,8 +453,9 @@ CacheResult cachesim_ref_wb(cache_t2* c, RefType ref, Addr a, UChar size)
     UWord tag = a & c->tag_mask;
 
     /* Access entirely within line. */
-    if (set1 == set2)
-	return cachesim_setref_wb(c, ref, set1, tag);
+    if (set1 == set2) {
+		return cachesim_setref_wb(c, ref, set1, tag, a);
+	}
 
     /* Access straddles two lines. */
     /* Nb: this is a fast way of doing ((set1+1) % c->sets) */
@@ -404,8 +463,8 @@ CacheResult cachesim_ref_wb(cache_t2* c, RefType ref, Addr a, UChar size)
 	UWord tag2  = (a+size-1) & c->tag_mask;
 
 	/* the call updates cache structures as side effect */
-	CacheResult res1 =  cachesim_setref_wb(c, ref, set1, tag);
-	CacheResult res2 =  cachesim_setref_wb(c, ref, set2, tag2);
+	CacheResult res1 =  cachesim_setref_wb(c, ref, set1, tag, a);
+	CacheResult res2 =  cachesim_setref_wb(c, ref, set2, tag2, a+size-1);
 
 	if ((res1 == MissDirty) || (res2 == MissDirty)) return MissDirty;
 	return ((res1 == Miss) || (res2 == Miss)) ? Miss : Hit;
@@ -433,18 +492,21 @@ CacheModelResult cachesim_I1_Read(Addr a, UChar size)
 static
 CacheModelResult cachesim_D1_Read(Addr a, UChar size)
 {
-    if ( cachesim_ref( &D1, a, size) == Hit ) return L1_Hit;
-    switch( cachesim_ref_wb( &LL, Read, a, size) ) {
-	case Hit: return LL_Hit;
-	case Miss: return MemAccess;
-	default: break;
-    }
+	if ( cachesim_ref( &D1, a, size) == Hit ) return L1_Hit;
+	switch( cachesim_ref_wb( &LL, Read, a, size) ) {
+		case Hit: 
+			return LL_Hit;
+		case Miss: 
+			return MemAccess;
+		default: break;
+	}
     return WriteBackMemAccess;
 }
 
 static
 CacheModelResult cachesim_D1_Write(Addr a, UChar size)
 {
+			
     if ( cachesim_ref( &D1, a, size) == Hit ) {
 	/* Even for a L1 hit, the write-trough L1 passes
 	 * the write to the LL to make the LL line dirty.
@@ -495,31 +557,31 @@ void prefetch_LL_doref(Addr a)
   UInt block = ( a >> LL.line_size_bits);
 
   if (block != pf_lastblock[stream]) {
-    if (pf_seqblocks[stream] == 0) {
-      if (pf_lastblock[stream] +1 == block) pf_seqblocks[stream]++;
-      else if (pf_lastblock[stream] -1 == block) pf_seqblocks[stream]--;
-    }
-    else if (pf_seqblocks[stream] >0) {
-      if (pf_lastblock[stream] +1 == block) {
-	pf_seqblocks[stream]++;
-	if (pf_seqblocks[stream] >= 2) {
-	  prefetch_up++;
-	  cachesim_ref(&LL, a + 5 * LL.line_size,1);
-	}
-      }
-      else pf_seqblocks[stream] = 0;
-    }
-    else if (pf_seqblocks[stream] <0) {
-      if (pf_lastblock[stream] -1 == block) {
-	pf_seqblocks[stream]--;
-	if (pf_seqblocks[stream] <= -2) {
-	  prefetch_down++;
-	  cachesim_ref(&LL, a - 5 * LL.line_size,1);
-	}
-      }
-      else pf_seqblocks[stream] = 0;
-    }
-    pf_lastblock[stream] = block;
+	  if (pf_seqblocks[stream] == 0) {
+		  if (pf_lastblock[stream] +1 == block) pf_seqblocks[stream]++;
+		  else if (pf_lastblock[stream] -1 == block) pf_seqblocks[stream]--;
+	  }
+	  else if (pf_seqblocks[stream] >0) {
+		  if (pf_lastblock[stream] +1 == block) {
+			  pf_seqblocks[stream]++;
+			  if (pf_seqblocks[stream] >= 2) {
+				  prefetch_up++;
+				  cachesim_ref(&LL, a + 5 * LL.line_size,1);
+			  }
+		  }
+		  else pf_seqblocks[stream] = 0;
+	  }
+	  else if (pf_seqblocks[stream] <0) {
+		  if (pf_lastblock[stream] -1 == block) {
+			  pf_seqblocks[stream]--;
+			  if (pf_seqblocks[stream] <= -2) {
+				  prefetch_down++;
+				  cachesim_ref(&LL, a - 5 * LL.line_size,1);
+			  }
+		  }
+		  else pf_seqblocks[stream] = 0;
+	  }
+	  pf_lastblock[stream] = block;
   }
 }  
 
