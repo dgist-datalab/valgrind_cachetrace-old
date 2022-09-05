@@ -32,7 +32,6 @@
 /stamp-h*
 /svn-commit.2.tmp
 /svn-commit.tmp
-/valgrind
 /valgrind.pc
 /valgrind.spec
 /valt_load_address*.lds
