@@ -149,6 +149,13 @@ static struct {
 /*--- Cache Simulator Initialization                       ---*/
 /*------------------------------------------------------------*/
 
+/* timestamp for trace */
+#define TRACE_TIMESTAMP
+
+/* ref function for LL */
+#define CACHELINE_DIRTY_UL 1ul
+
+
 static void cachesim_clearcache(cache_t2* c)
 {
   Int i;
@@ -222,9 +229,6 @@ static void print_cache(cache_t2* c)
    }
 }
 #endif 
-
-/* ref function for LL */
-#define CACHELINE_DIRTY_UL 1ul
 
 /*------------------------------------------------------------*/
 /*--- Simple Cache Simulation                              ---*/
@@ -392,6 +396,9 @@ CacheResult cachesim_setref_wb(cache_t2* c, RefType ref, UInt set_no, UWord tag,
 
     int i, j;
     UWord *set, tmp_tag;
+#ifdef TRACE_TIMESTAMP
+	struct timespec ts;
+#endif
 
     set = &(c->tags[set_no * c->assoc]);
 
@@ -433,13 +440,24 @@ CacheResult cachesim_setref_wb(cache_t2* c, RefType ref, UInt set_no, UWord tag,
 	if (tmp_tag & CACHELINE_DIRTY_UL) { // If victim is dirty, write-back
 		/* If empty, then clean anyway */
 		rest_a = (tmp_tag&~CACHELINE_DIRTY_UL) | (set_no << c->line_size_bits);
+#ifdef TRACE_TIMESTAMP
+		VG_(clock_gettime)(&ts, CLOCK_MONOTONIC);
+		VG_(printf)("[W %lx %lld.%.6ld]\n", rest_a, (long long)ts.tv_sec, ts.tv_nsec/1000);
+
+#else
 		VG_(printf)("[W %lx]\n", rest_a);
+#endif
 
 	}
 
 	/* LL miss (load/store both) needs MemRead */
 	rest_a = tag | (set_no << c->line_size_bits);
+#ifdef TRACE_TIMESTAMP
+	VG_(clock_gettime)(&ts, CLOCK_MONOTONIC);
+	VG_(printf)("[R %lx %lld.%.6ld]\n", rest_a, (long long)ts.tv_sec, ts.tv_nsec/1000);
+#else
 	VG_(printf)("[R %lx]\n", rest_a);
+#endif
 
     return (tmp_tag & CACHELINE_DIRTY) ? MissDirty : Miss;
 }
