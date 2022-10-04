@@ -29,6 +29,7 @@
 */
 
 #include "global.h"
+#include <time.h>
 
 
 /* Notes:
