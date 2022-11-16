@@ -1,3 +1,5 @@
+/*/callgrind.out.*
+
 *.o
 
 # /
@@ -69,7 +71,7 @@
 
 # /docs/
 /docs/print/
-/docs/xml/vg-entities.xml
+docs/xml/vg-entities.xml
 
 # /cachegrind/
 /cachegrind/*.so
