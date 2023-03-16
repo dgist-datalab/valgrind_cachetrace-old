@@ -439,6 +439,7 @@ void CLG_(print_context)(void)
 void* CLG_(malloc)(const HChar* cc, UWord s, const HChar* f)
 {
     CLG_DEBUG(3, "Malloc(%lu) in %s.\n", s, f);
+	VG_(printf)("CLG_(malloc) called. s: %zu\n", s);
     return VG_(malloc)(cc,s);
 }
 

@@ -853,11 +853,13 @@ void CLG_(print_addr_ln)(Addr addr);
 
 void* CLG_(malloc)(const HChar* cc, UWord s, const HChar* f);
 void* CLG_(free)(void* p, const HChar* f);
+
 #if 0
 #define CLG_MALLOC(_cc,x) CLG_(malloc)((_cc),x,__FUNCTION__)
 #define CLG_FREE(p)       CLG_(free)(p,__FUNCTION__)
 #else
 #define CLG_MALLOC(_cc,x) VG_(malloc)((_cc),x)
+//#define CLG_MALLOC(_cc,x) CLG_(malloc)((_cc),x,__FUNCTION__)
 #define CLG_FREE(p)       VG_(free)(p)
 #endif
 

@@ -45,6 +45,14 @@
 /* Cache configuration */
 #include "cg_arch.c"
 
+/* Ignore cache or not (similat to lackey's mem-trace) */
+//#define IGNORE_CACHE
+#define LS_CNT_SAMPLE 1
+//#define LS_CNT_SAMPLING
+#ifdef LS_CNT_SAMPLING
+int ls_cnt;
+#endif
+
 /* additional structures for cache use info, separated
  * according usage frequency:
  * - line_loaded : pointer to cost center of instruction 
@@ -499,6 +507,21 @@ CacheResult cachesim_ref_wb(cache_t2* c, RefType ref, Addr a, UChar size)
 static
 CacheModelResult cachesim_I1_Read(Addr a, UChar size)
 {
+	/* Ignore Cache */
+#ifdef IGNORE_CACHE
+#ifdef TRACE_TIMESTAMP
+	//struct timespec ts;
+	//VG_(clock_gettime)(&ts, CLOCK_MONOTONIC);
+#endif
+	//VG_(printf)("[L %lx %lu %lld.%.09ld]\n", a, size, (long long)ts.tv_sec, ts.tv_nsec);
+#ifdef TRACE_TIMESTAMP
+	//VG_(printf)("[R %lu %lld.%.09ld]\n", a, (long long)ts.tv_sec, ts.tv_nsec);
+#else
+	//VG_(printf)("[R %lu]\n", a);
+#endif
+	return Miss;
+#endif
+	
     if ( cachesim_ref( &I1, a, size) == Hit ) return L1_Hit;
     switch( cachesim_ref_wb( &LL, Read, a, size) ) {
 	case Hit: return LL_Hit;
@@ -511,6 +534,29 @@ CacheModelResult cachesim_I1_Read(Addr a, UChar size)
 static
 CacheModelResult cachesim_D1_Read(Addr a, UChar size)
 {
+	/* Ignore Cache */
+#ifdef IGNORE_CACHE
+#ifdef TRACE_TIMESTAMP
+	struct timespec ts;
+	VG_(clock_gettime)(&ts, CLOCK_MONOTONIC);
+#endif
+	
+	//VG_(printf)("[L %lx %lu %lld.%.09ld]\n", a, size, (long long)ts.tv_sec, ts.tv_nsec);
+#ifdef LS_CNT_SAMPLING
+	if (ls_cnt++ % LS_CNT_SAMPLE == 0) {
+#endif
+#ifdef TRACE_TIMESTAMP
+		VG_(printf)("[R %lu %lld.%.09ld]\n", a, (long long)ts.tv_sec, ts.tv_nsec);
+#else
+		VG_(printf)("[R %lu 0]\n", a);
+#endif
+#ifdef LS_CNT_SAMPLING
+		ls_cnt = 1;
+	}
+#endif
+	return Miss;
+#endif
+
 	if ( cachesim_ref( &D1, a, size) == Hit ) return L1_Hit;
 	switch( cachesim_ref_wb( &LL, Read, a, size) ) {
 		case Hit: 
@@ -525,6 +571,28 @@ CacheModelResult cachesim_D1_Read(Addr a, UChar size)
 static
 CacheModelResult cachesim_D1_Write(Addr a, UChar size)
 {
+	/* Ignore Cache */
+#ifdef IGNORE_CACHE
+#ifdef TRACE_TIMESTAMP
+	struct timespec ts;
+	VG_(clock_gettime)(&ts, CLOCK_MONOTONIC);
+#endif
+
+	//VG_(printf)("[S %lx %lu %lld.%.09ld]\n", a, size, (long long)ts.tv_sec, ts.tv_nsec);
+#ifdef LS_CNT_SAMPLING
+	if (ls_cnt++ % LS_CNT_SAMPLE == 0) {
+#endif
+#ifdef TRACE_TIMESTAMP
+		VG_(printf)("[W %lu %lld.%.09ld]\n", a, (long long)ts.tv_sec, ts.tv_nsec);
+#else
+		VG_(printf)("[W %lu 0]\n", a);
+#endif
+#ifdef LS_CNT_SAMPLING
+		ls_cnt = 1;
+	}
+#endif
+	return Miss;
+#endif
 			
     if ( cachesim_ref( &D1, a, size) == Hit ) {
 	/* Even for a L1 hit, the write-trough L1 passes
@@ -1470,6 +1538,15 @@ static void cachesim_post_clo_init(void)
       simulator.D1_Write = cacheuse_D1_doRead;
       return;
   }
+
+#ifdef IGNORE_CACHE
+  if (clo_simulate_hwpref) {
+	  VG_(message)(Vg_DebugMsg,
+		       "warning: prefetch simulation can not be "
+                       "used with IGNORE_CACHE\n");
+	  clo_simulate_hwpref = False;
+  }
+#endif
 
   if (clo_simulate_hwpref) {
     prefetch_clear();

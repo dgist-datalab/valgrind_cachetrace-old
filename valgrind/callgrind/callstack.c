@@ -110,11 +110,29 @@ void ensure_stack_size(Int i)
 }
 
 
+#define MJ_FUNC_TRACK
 
 /* Called when function entered nonrecursive */
 static void function_entered(fn_node* fn)
 {
   CLG_ASSERT(fn != 0);
+#ifdef MJ_FUNC_TRACK
+  if (fn->is_malloc) {
+	  //VG_(printf)("f mb %s\n", fn->name);
+  } else if (fn->is_free) {
+	  //VG_(printf)("f fb %s\n", fn->name);
+  } else {
+	  VG_(printf)("^f b %s\n", fn->name);
+	  //VG_(printf)("f b %s\n", fn->name);
+  }
+#endif
+
+  /*
+	 fn_node에 malloc 확인 옵션 있음.
+	 fn->is_malloc == 1
+	 fn->is_free == 1
+	 argument (size)랑 return (addr)은 못 얻는 것 같은데, 여기서 바로 얻는 방법 없나?
+  */
 
 #if CLG_ENABLE_DEBUG
   if (fn->verbosity >=0) {
@@ -147,7 +165,19 @@ static void function_entered(fn_node* fn)
 /* Called when function left (no recursive level active) */
 static void function_left(fn_node* fn)
 {
+	/* malloc end & free end is trivial */
   CLG_ASSERT(fn != 0);
+#ifdef MJ_FUNC_TRACK
+  if (fn->is_malloc) {
+	  //VG_(printf)("f me %s\n", fn->name);
+  } else if (fn->is_free) {
+	  //VG_(printf)("f fe %s\n", fn->name);
+  } else {
+	  VG_(printf)("^f e %s\n", fn->name);
+	  //VG_(printf)("f e %s\n", fn->name);
+  }
+#endif
+  //VG_(printf)("f e %s\n", fn->name);
 
   if (fn->dump_after) {
     HChar trigger[VG_(strlen)(fn->name) + 20];
@@ -183,122 +213,130 @@ static void function_left(fn_node* fn)
  */
 void CLG_(push_call_stack)(BBCC* from, UInt jmp, BBCC* to, Addr sp, Bool skip)
 {
-    jCC* jcc;
-    UInt* pdepth;
-    call_entry* current_entry;
-    Addr ret_addr;
+	jCC* jcc;
+	UInt* pdepth;
+	call_entry* current_entry;
+	Addr ret_addr;
+	//int ism = 0;
 
-    /* Ensure a call stack of size <current_sp>+1.
-     * The +1 is needed as push_cxt will store the
-     * context at [current_sp]
-     */
-    ensure_stack_size(CLG_(current_call_stack).sp +1);
-    current_entry = &(CLG_(current_call_stack).entry[CLG_(current_call_stack).sp]);
+	/* Ensure a call stack of size <current_sp>+1.
+	 * The +1 is needed as push_cxt will store the
+	 * context at [current_sp]
+	 */
+	ensure_stack_size(CLG_(current_call_stack).sp +1);
+	current_entry = &(CLG_(current_call_stack).entry[CLG_(current_call_stack).sp]);
 
-    if (skip) {
-	jcc = 0;
-    }
-    else {
-	fn_node* to_fn = to->cxt->fn[0];
-
-	if (CLG_(current_state).nonskipped) {
-	    /* this is a jmp from skipped to nonskipped */
-	    CLG_ASSERT(CLG_(current_state).nonskipped == from);
-	}
-
-	/* As push_cxt() has to be called before push_call_stack if not
-	 * skipping, the old context should already be saved on the stack */
-	CLG_ASSERT(current_entry->cxt != 0);
-	CLG_(copy_cost_lz)( CLG_(sets).full, &(current_entry->enter_cost),
-			   CLG_(current_state).cost );
-
-	jcc = CLG_(get_jcc)(from, jmp, to);
-	CLG_ASSERT(jcc != 0);
-
-	pdepth = CLG_(get_fn_entry)(to_fn->number);
-	if (CLG_(clo).skip_direct_recursion) {
-	    /* only increment depth if another function is called */
-	  if (jcc->from->cxt->fn[0] != to_fn) (*pdepth)++;
-	}
-	else (*pdepth)++;
-
-	if (*pdepth>1)
-	  CLG_(stat).rec_call_counter++;
-	
-	jcc->call_counter++;
-	CLG_(stat).call_counter++;
-
-	if (*pdepth == 1) function_entered(to_fn);
-    }
-
-    /* return address is only is useful with a real call;
-     * used to detect RET w/o CALL */
-    if (from->bb->jmp[jmp].jmpkind == jk_Call) {
-      UInt instr = from->bb->jmp[jmp].instr;
-      ret_addr = bb_addr(from->bb) +
-	from->bb->instr[instr].instr_offset +
-	from->bb->instr[instr].instr_size;
-    }
-    else
-      ret_addr = 0;
-
-    /* put jcc on call stack */
-    current_entry->jcc = jcc;
-    current_entry->sp = sp;
-    current_entry->ret_addr = ret_addr;
-    current_entry->nonskipped = CLG_(current_state).nonskipped;
-
-    CLG_(current_call_stack).sp++;
-
-    /* To allow for above assertion we set context of next frame to 0 */
-    CLG_ASSERT(CLG_(current_call_stack).sp < CLG_(current_call_stack).size);
-    current_entry++;
-    current_entry->cxt = 0;
-
-    if (!skip)
-	CLG_(current_state).nonskipped = 0;
-    else if (!CLG_(current_state).nonskipped) {
-	/* a call from nonskipped to skipped */
-	CLG_(current_state).nonskipped = from;
-	if (!CLG_(current_state).nonskipped->skipped) {
-	  CLG_(init_cost_lz)( CLG_(sets).full,
-			     &CLG_(current_state).nonskipped->skipped);
-	  CLG_(stat).distinct_skips++;
-	}
-    }
-
-#if CLG_ENABLE_DEBUG
-    CLG_DEBUGIF(0) {
-	if (CLG_(clo).verbose<2) {
-	  if (jcc && jcc->to && jcc->to->bb) {
-	    const HChar spaces[][41] = {
-                                  "   .   .   .   .   .   .   .   .   .   .",
-				  "  .   .   .   .   .   .   .   .   .   . ",
-				  " .   .   .   .   .   .   .   .   .   .  ",
-				  ".   .   .   .   .   .   .   .   .   .   " };
-
-	    int s = CLG_(current_call_stack).sp;
-	    UInt* pars = (UInt*) sp;
-
-	    BB* bb = jcc->to->bb;
-	    if (s>40) s=40;
-	    VG_(printf)("%s> %s(0x%x, 0x%x, ...) [%s / %#lx]\n", spaces[s%4]+40-s, bb->fn->name,
-                        pars ? pars[1]:0,
-			pars ? pars[2]:0,
-			bb->obj->name + bb->obj->last_slash_pos,
-			(UWord)bb->offset);
-	  }
-	}
-	else if (CLG_(clo).verbose<4) {
-	    VG_(printf)("+ %2d ", CLG_(current_call_stack).sp);
-	    CLG_(print_short_jcc)(jcc);
-	    VG_(printf)(", SP %#lx, RA %#lx\n", sp, ret_addr);
+	if (skip) {
+		jcc = 0;
 	}
 	else {
-	    VG_(printf)("  Pushed ");
-	    CLG_(print_stackentry)(3, CLG_(current_call_stack).sp-1);
+		fn_node* to_fn = to->cxt->fn[0];
+
+		if (CLG_(current_state).nonskipped) {
+			/* this is a jmp from skipped to nonskipped */
+			CLG_ASSERT(CLG_(current_state).nonskipped == from);
+		}
+
+		/* As push_cxt() has to be called before push_call_stack if not
+		 * skipping, the old context should already be saved on the stack */
+		CLG_ASSERT(current_entry->cxt != 0);
+		CLG_(copy_cost_lz)( CLG_(sets).full, &(current_entry->enter_cost),
+				CLG_(current_state).cost );
+
+		jcc = CLG_(get_jcc)(from, jmp, to);
+		CLG_ASSERT(jcc != 0);
+
+		pdepth = CLG_(get_fn_entry)(to_fn->number);
+		if (CLG_(clo).skip_direct_recursion) {
+			/* only increment depth if another function is called */
+			if (jcc->from->cxt->fn[0] != to_fn) (*pdepth)++;
+		}
+		else (*pdepth)++;
+
+		if (*pdepth>1)
+			CLG_(stat).rec_call_counter++;
+
+		jcc->call_counter++;
+		CLG_(stat).call_counter++;
+
+		if (*pdepth == 1) {
+			function_entered(to_fn);
+			//if (to_fn->is_malloc) ism = 1;
+		}
 	}
-    }
+
+	/* return address is only is useful with a real call;
+	 * used to detect RET w/o CALL */
+	if (from->bb->jmp[jmp].jmpkind == jk_Call) {
+		UInt instr = from->bb->jmp[jmp].instr;
+		ret_addr = bb_addr(from->bb) +
+			from->bb->instr[instr].instr_offset +
+			from->bb->instr[instr].instr_size;
+	}
+	else
+		ret_addr = 0;
+	//if (ism) {
+		//VG_(printf)("malloc addr: %p\n", ret_addr);
+	//}
+
+
+	/* put jcc on call stack */
+	current_entry->jcc = jcc;
+	current_entry->sp = sp;
+	current_entry->ret_addr = ret_addr;
+	current_entry->nonskipped = CLG_(current_state).nonskipped;
+
+	CLG_(current_call_stack).sp++;
+
+	/* To allow for above assertion we set context of next frame to 0 */
+	CLG_ASSERT(CLG_(current_call_stack).sp < CLG_(current_call_stack).size);
+	current_entry++;
+	current_entry->cxt = 0;
+
+	if (!skip)
+		CLG_(current_state).nonskipped = 0;
+	else if (!CLG_(current_state).nonskipped) {
+		/* a call from nonskipped to skipped */
+		CLG_(current_state).nonskipped = from;
+		if (!CLG_(current_state).nonskipped->skipped) {
+			CLG_(init_cost_lz)( CLG_(sets).full,
+					&CLG_(current_state).nonskipped->skipped);
+			CLG_(stat).distinct_skips++;
+		}
+	}
+
+#if CLG_ENABLE_DEBUG
+	CLG_DEBUGIF(0) {
+		if (CLG_(clo).verbose<2) {
+			if (jcc && jcc->to && jcc->to->bb) {
+				const HChar spaces[][41] = {
+					"   .   .   .   .   .   .   .   .   .   .",
+					"  .   .   .   .   .   .   .   .   .   . ",
+					" .   .   .   .   .   .   .   .   .   .  ",
+					".   .   .   .   .   .   .   .   .   .   " };
+
+				int s = CLG_(current_call_stack).sp;
+				UInt* pars = (UInt*) sp;
+
+				BB* bb = jcc->to->bb;
+				if (s>40) s=40;
+				VG_(printf)("%s> %s(0x%x, 0x%x, ...) [%s / %#lx]\n", spaces[s%4]+40-s, bb->fn->name,
+						pars ? pars[1]:0,
+						pars ? pars[2]:0,
+						bb->obj->name + bb->obj->last_slash_pos,
+						(UWord)bb->offset);
+			}
+		}
+		else if (CLG_(clo).verbose<4) {
+			VG_(printf)("+ %2d ", CLG_(current_call_stack).sp);
+			CLG_(print_short_jcc)(jcc);
+			VG_(printf)(", SP %#lx, RA %#lx\n", sp, ret_addr);
+		}
+		else {
+			VG_(printf)("  Pushed ");
+			CLG_(print_stackentry)(3, CLG_(current_call_stack).sp-1);
+		}
+	}
 #endif
 
 }

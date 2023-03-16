@@ -2104,6 +2104,11 @@ void CLG_(post_clo_init)(void)
    }
 }
 
+void* CLG_(mymalloc) (ThreadId tid, SizeT n ) {
+	VG_(printf)("Hi. %zu\n", n);
+	return NULL;
+}
+
 static
 void CLG_(pre_clo_init)(void)
 {
@@ -2135,6 +2140,27 @@ void CLG_(pre_clo_init)(void)
 
     VG_(needs_client_requests)(CLG_(handle_client_request));
     VG_(needs_print_stats)    (clg_print_stats);
+	//VG_(needs_malloc_replacement)  (CLG_(malloc));
+	//VG_(printf)("malloc replacement?\n");
+#if 1
+	   VG_(needs_malloc_replacement)  (CLG_(mymalloc),
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   NULL );
+#endif
+	   //VG_(printf)("needs: %d\n", VG_(needs).malloc_replacement);
+
 
     VG_(track_start_client_code)  ( & clg_start_client_code_callback );
     VG_(track_pre_deliver_signal) ( & CLG_(pre_signal) );
