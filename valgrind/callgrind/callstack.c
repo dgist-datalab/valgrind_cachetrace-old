@@ -111,6 +111,10 @@ void ensure_stack_size(Int i)
 
 
 #define MJ_FUNC_TRACK
+#define COMPARE_NAME(a,b)	if (VG_(strcmp)(a, b) != 0) {\
+	VG_(printf)("Two names are different! ([%s]-[%s])\n", a, b);\
+	}
+	//VG_(exit)(0); \
 
 /* Called when function entered nonrecursive */
 static void function_entered(fn_node* fn)
@@ -126,6 +130,18 @@ static void function_entered(fn_node* fn)
 	  //VG_(printf)("f b %s\n", fn->name);
   }
 #endif
+  Context* my_cxt = fn->pure_cxt;
+  //int num_fn_nodes = (sizeof(struct _Context) - sizeof(UInt) - sizeof(UInt) - sizeof(Context*) - sizeof(UWord)) / sizeof(fn_node*); 
+
+  //VG_(printf)("name: %s, num_fn_nodes: %d\n", fn->name, num_fn_nodes);
+  /*
+  if (num_fn_nodes > 1) {
+	  fn_node* caller = my_cxt->fn[1];
+	  if (VG_(strcmp)(fn->name, "malloc") == 0) {
+		  VG_(printf)("caller name: %s\n", caller->name);
+	  }
+  }
+  */
 
   /*
 	 fn_node에 malloc 확인 옵션 있음.
@@ -260,6 +276,62 @@ void CLG_(push_call_stack)(BBCC* from, UInt jmp, BBCC* to, Addr sp, Bool skip)
 		CLG_(stat).call_counter++;
 
 		if (*pdepth == 1) {
+#ifdef MJ_FUNC_TRACK
+			/* minjae */
+			//if (to_fn->is_malloc)
+			//if (VG_(strcmp)(to_fn->name, "test_seq(char, char*, unsigned long, int, unsigned long)") == 0) {
+			COMPARE_NAME(from->cxt->fn[0]->name, from->bb->fn->name);
+
+			/* 호출하려는 이 각 함수별로(try_usable), 혹시 caller가 zmalloc family인지 아닌지 구분해야 한다. caller가 zmalloc family면, print하는 순간 겹친다. */
+			// zmalloc family들끼리 구분은 됐지만, 소스코드 레벨의 구분은 아직 안 됐다. 
+			if (VG_(strcmp)(to_fn->name, "zmalloc") == 0) {
+				VG_(printf)("^z b 1 %s\n", from->cxt->fn[0]->name);
+				VG_(printf)("file name: %s\n", from->cxt->fn[0]->file->name);
+			}
+			else if (VG_(strcmp)(to_fn->name, "zmalloc_usable") == 0) 
+				VG_(printf)("^z b 3 %s\n", from->cxt->fn[0]->name);
+			else if (VG_(strcmp)(to_fn->name, "ztrymalloc") == 0) 
+				VG_(printf)("^z b 4 %s\n", from->cxt->fn[0]->name);
+			else if (VG_(strcmp)(to_fn->name, "ztrymalloc_usable") == 0) {
+				if ( !( (VG_(strcmp)(from->cxt->fn[0]->name, "zmalloc") == 0) || 
+						(VG_(strcmp)(from->cxt->fn[0]->name, "zmalloc_usable") == 0) || 
+						(VG_(strcmp)(from->cxt->fn[0]->name, "ztrymalloc") == 0)) ) // 위 셋 중 하나가 아니면
+					VG_(printf)("^z b 5 %s\n", from->cxt->fn[0]->name);
+				else // 위 셋 중 하나면
+					VG_(printf)("^z x 5 %s\n", from->cxt->fn[0]->name);
+			}
+			else if (VG_(strcmp)(to_fn->name, "zrealloc") == 0) 
+				VG_(printf)("^z b 6 %s\n", from->cxt->fn[0]->name);
+			else if (VG_(strcmp)(to_fn->name, "zrealloc_usable") == 0) 
+				VG_(printf)("^z b 7 %s\n", from->cxt->fn[0]->name);
+			else if (VG_(strcmp)(to_fn->name, "ztryrealloc") == 0) 
+				VG_(printf)("^z b 8 %s\n", from->cxt->fn[0]->name);
+			else if (VG_(strcmp)(to_fn->name, "ztryrealloc_usable") == 0) {
+				if ( !( (VG_(strcmp)(from->cxt->fn[0]->name, "zrealloc") == 0) || 
+						(VG_(strcmp)(from->cxt->fn[0]->name, "zrealloc_usable") == 0) || 
+						(VG_(strcmp)(from->cxt->fn[0]->name, "ztryrealloc") == 0)) ) // 위 셋 중 하나가 아니면
+					VG_(printf)("^z b 9 %s\n", from->cxt->fn[0]->name);
+				else // 위 셋 중 하나면
+					VG_(printf)("^z x 9 %s\n", from->cxt->fn[0]->name);
+			}
+			else if (VG_(strcmp)(to_fn->name, "zcalloc") == 0) 
+				VG_(printf)("^z b 10 %s\n", from->cxt->fn[0]->name);
+			else if (VG_(strcmp)(to_fn->name, "zcalloc_usable") == 0) 
+				VG_(printf)("^z b 11 %s\n", from->cxt->fn[0]->name);
+			else if (VG_(strcmp)(to_fn->name, "ztrycalloc") == 0) 
+				VG_(printf)("^z b 12 %s\n", from->cxt->fn[0]->name);
+			else if (VG_(strcmp)(to_fn->name, "ztrycalloc_usable") == 0) {
+				if ( !( (VG_(strcmp)(from->cxt->fn[0]->name, "zrealloc") == 0) || 
+						(VG_(strcmp)(from->cxt->fn[0]->name, "zrealloc_usable") == 0) || 
+						(VG_(strcmp)(from->cxt->fn[0]->name, "ztryrealloc") == 0)) ) // 위 셋 중 하나가 아니면
+					VG_(printf)("^z b 13 %s\n", from->cxt->fn[0]->name);
+				else // 위 셋 중 하나면
+					VG_(printf)("^z x 13 %s\n", from->cxt->fn[0]->name);
+			}
+
+			/* ! minjae */
+#endif // ! MJ_FUNC_TRACK
+
 			function_entered(to_fn);
 			//if (to_fn->is_malloc) ism = 1;
 		}
