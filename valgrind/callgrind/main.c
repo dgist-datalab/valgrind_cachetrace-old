@@ -434,7 +434,7 @@ static void flushEvents ( ClgState* clgs )
       helperAddr = NULL;
       argv       = NULL;
       regparms   = 0;
-
+ 
       /* generate IR to notify event i and possibly the ones
 	 immediately following it. */
       tl_assert(i >= 0 && i < clgs->events_used);
@@ -1016,6 +1016,8 @@ IRSB* CLG_(instrument)( VgCallbackClosure* closure,
       st = sbIn->stmts[i];
       CLG_ASSERT(isFlatIRStmt(st));
 
+
+	  //VG_(printf)("(St) tag: %d\n", st->tag);
       switch (st->tag) {
 	 case Ist_NoOp:
 	 case Ist_AbiHint:
@@ -1042,6 +1044,7 @@ IRSB* CLG_(instrument)( VgCallbackClosure* closure,
 	    curr_inode = next_InstrInfo (&clgs, isize);
 
 	    addEvent_Ir( &clgs, curr_inode );
+		//VG_(printf)("(Ist_IMark) Iaddr: %x, isize: %lu\n", cia, isize);
 	    break;
 	 }
 
@@ -1060,6 +1063,14 @@ IRSB* CLG_(instrument)( VgCallbackClosure* closure,
 	 case Ist_Store: {
 	    IRExpr* data  = st->Ist.Store.data;
 	    IRExpr* aexpr = st->Ist.Store.addr;
+		/* JAE */
+		//Addr   myiaddr = st->Ist.IMark.addr; // instruction address of the input machine code
+		//Addr   mycia   = st->Ist.IMark.addr + st->Ist.IMark.delta; // delta=0 in x86
+		//VG_(printf)("(Ist_Store) myiaddr: 0x%lx, mycia: 0x%lx: \n", myiaddr, mycia);
+		//VG_(printf)("(Ist_Store) %x %x %x %x %x %x %x\n", aexpr->tag, aexpr->Iex.Binder.binder, aexpr->Iex.Get.offset, aexpr->Iex.Get.ty,
+				//aexpr->Iex.RdTmp.tmp, aexpr->Iex.Load.end, aexpr->Iex.Load.ty//, aexpr->Iex.Load.addr->tag
+				//);
+
 	    addEvent_Dw( &clgs, curr_inode,
 			 sizeofIRType(typeOfIRExpr(sbIn->tyenv, data)), aexpr );
 	    break;
@@ -1084,6 +1095,13 @@ IRSB* CLG_(instrument)( VgCallbackClosure* closure,
             IRExpr*  addr     = lg->addr;
             typeOfIRLoadGOp(lg->cvt, &typeWide, &type);
             tl_assert(type != Ity_INVALID);
+		/* JAE */
+		//Addr   myiaddr = st->Ist.IMark.addr;
+		//Addr   mycia   = st->Ist.IMark.addr + st->Ist.IMark.delta;
+		//VG_(printf)("(Ist_LoadG) myiaddr: 0x%lx, mycia: 0x%lx: \n", myiaddr, mycia);
+		//VG_(printf)("(Ist_LoadG) %x %x %x %x %x %x %x\n", addr->tag, addr->Iex.Binder.binder, addr->Iex.Get.offset, addr->Iex.Get.ty,
+				//addr->Iex.RdTmp.tmp, addr->Iex.Load.end, addr->Iex.Load.ty//, addr->Iex.Load.addr->tag
+				//);
             addEvent_D_guarded( &clgs, curr_inode,
                                 sizeofIRType(type), addr, lg->guard,
                                 False/*!isWrite*/ );

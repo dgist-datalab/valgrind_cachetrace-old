@@ -130,7 +130,7 @@ static void function_entered(fn_node* fn)
 	  //VG_(printf)("f b %s\n", fn->name);
   }
 #endif
-  Context* my_cxt = fn->pure_cxt;
+  //Context* my_cxt = fn->pure_cxt;
   //int num_fn_nodes = (sizeof(struct _Context) - sizeof(UInt) - sizeof(UInt) - sizeof(Context*) - sizeof(UWord)) / sizeof(fn_node*); 
 
   //VG_(printf)("name: %s, num_fn_nodes: %d\n", fn->name, num_fn_nodes);

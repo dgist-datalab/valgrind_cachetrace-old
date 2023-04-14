@@ -46,9 +46,11 @@
 #include "cg_arch.c"
 
 /* Ignore cache or not (similat to lackey's mem-trace) */
-//#define IGNORE_CACHE
-#define LS_CNT_SAMPLE 1
+#define IGNORE_CACHE
+
 //#define LS_CNT_SAMPLING
+#define LS_CNT_SAMPLE 1
+
 #ifdef LS_CNT_SAMPLING
 int ls_cnt;
 #endif
@@ -159,7 +161,7 @@ static struct {
 /*------------------------------------------------------------*/
 
 /* timestamp for trace */
-#define TRACE_TIMESTAMP
+//#define TRACE_TIMESTAMP
 
 /* ref function for LL */
 #define CACHELINE_DIRTY_UL 1ul
@@ -509,15 +511,24 @@ CacheModelResult cachesim_I1_Read(Addr a, UChar size)
 {
 	/* Ignore Cache */
 #ifdef IGNORE_CACHE
+	//Addr iaddr = CLG_(bb_base) + current_ii->instr_offset;
+	//VG_(printf)("(I1 Read) iaddr: %lx\n", iaddr); // always iaddr == a
 #ifdef TRACE_TIMESTAMP
-	//struct timespec ts;
-	//VG_(clock_gettime)(&ts, CLOCK_MONOTONIC);
+	struct timespec ts;
+	VG_(clock_gettime)(&ts, CLOCK_MONOTONIC);
 #endif
-	//VG_(printf)("[L %lx %lu %lld.%.09ld]\n", a, size, (long long)ts.tv_sec, ts.tv_nsec);
+	
+#ifdef LS_CNT_SAMPLING
+	if (ls_cnt++ % LS_CNT_SAMPLE == 0) {
+#endif
 #ifdef TRACE_TIMESTAMP
-	//VG_(printf)("[R %lu %lld.%.09ld]\n", a, (long long)ts.tv_sec, ts.tv_nsec);
+		VG_(printf)("[R %lx %lld.%.09ld]\n", a, (long long)ts.tv_sec, ts.tv_nsec);
 #else
-	//VG_(printf)("[R %lu]\n", a);
+		VG_(printf)("[R %lx 0]\n", a);
+#endif
+#ifdef LS_CNT_SAMPLING
+		ls_cnt = 1;
+	}
 #endif
 	return Miss;
 #endif
@@ -536,6 +547,8 @@ CacheModelResult cachesim_D1_Read(Addr a, UChar size)
 {
 	/* Ignore Cache */
 #ifdef IGNORE_CACHE
+	//Addr iaddr = CLG_(bb_base) + current_ii->instr_offset;
+	//VG_(printf)("(D1 Read) iaddr: %lx\n", iaddr);
 #ifdef TRACE_TIMESTAMP
 	struct timespec ts;
 	VG_(clock_gettime)(&ts, CLOCK_MONOTONIC);
@@ -546,9 +559,9 @@ CacheModelResult cachesim_D1_Read(Addr a, UChar size)
 	if (ls_cnt++ % LS_CNT_SAMPLE == 0) {
 #endif
 #ifdef TRACE_TIMESTAMP
-		VG_(printf)("[R %lu %lld.%.09ld]\n", a, (long long)ts.tv_sec, ts.tv_nsec);
+		VG_(printf)("[R %lx %lld.%.09ld]\n", a, (long long)ts.tv_sec, ts.tv_nsec);
 #else
-		VG_(printf)("[R %lu 0]\n", a);
+		VG_(printf)("[R %lx 0]\n", a);
 #endif
 #ifdef LS_CNT_SAMPLING
 		ls_cnt = 1;
@@ -573,6 +586,8 @@ CacheModelResult cachesim_D1_Write(Addr a, UChar size)
 {
 	/* Ignore Cache */
 #ifdef IGNORE_CACHE
+	//Addr iaddr = CLG_(bb_base) + current_ii->instr_offset;
+	//VG_(printf)("(D1 Write) iaddr: %lx\n", iaddr);
 #ifdef TRACE_TIMESTAMP
 	struct timespec ts;
 	VG_(clock_gettime)(&ts, CLOCK_MONOTONIC);
@@ -583,9 +598,9 @@ CacheModelResult cachesim_D1_Write(Addr a, UChar size)
 	if (ls_cnt++ % LS_CNT_SAMPLE == 0) {
 #endif
 #ifdef TRACE_TIMESTAMP
-		VG_(printf)("[W %lu %lld.%.09ld]\n", a, (long long)ts.tv_sec, ts.tv_nsec);
+		VG_(printf)("[W %lx %lld.%.09ld]\n", a, (long long)ts.tv_sec, ts.tv_nsec);
 #else
-		VG_(printf)("[W %lu 0]\n", a);
+		VG_(printf)("[W %lx 0]\n", a);
 #endif
 #ifdef LS_CNT_SAMPLING
 		ls_cnt = 1;
@@ -858,6 +873,7 @@ static CacheModelResult cacheuse##_##L##_doRead(Addr a, UChar size)         \
         idx = (set1 * L.assoc) + (set[0] & ~L.tag_mask);                    \
         L.use[idx].count ++;                                                \
         L.use[idx].mask |= use_mask;                                        \
+   VG_(printf)("Hello! line %#lx from %#lx\n", L.loaded[idx].memline, L.loaded[idx].iaddr);\
 	CLG_DEBUG(6," Hit0 [idx %d] (line %#lx from %#lx): %x => %08x, count %u\n",\
 		 idx, L.loaded[idx].memline,  L.loaded[idx].iaddr,          \
 		 use_mask, L.use[idx].mask, L.use[idx].count);              \
